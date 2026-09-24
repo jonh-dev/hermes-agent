@@ -7,7 +7,14 @@
   <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
 </p>
 
-**The native desktop app for [Hermes Agent](../../README.md) — the self-improving AI agent from [Nous Research](https://nousresearch.com).** Same agent, same skills, same memory as the CLI and gateway, in a polished native window — chat with streaming tool output, side-by-side previews, a file browser, voice, and settings, no terminal required. Available for **macOS, Windows, and Linux**.
+**The native desktop app for [Hermes Agent](../../README.md) — the self-improving AI agent from [Nous Research](https://nousresearch.com).** Same agent, same skills, same memory as the CLI and gateway, in a polished native window — chat with streaming tool output, side-by-side previews, a file browser, voice, and settings, no terminal required. Available for **macOS (Apple Silicon), Windows, and Linux**.
+
+> **Intel Macs:** the prebuilt macOS installer is Apple Silicon only (the DMG
+> contains a single arm64 binary, no x86_64 slice). On an Intel Mac the
+> installer reports "not supported on this Mac" — install the
+> [CLI](../../README.md) instead and run `hermes desktop`, which builds the app
+> for your machine's own architecture. See
+> [Platform Support](../../website/docs/getting-started/platform-support.md#unsupported).
 
 <table>
 <tr><td><b>Chat with the full agent</b></td><td>Streaming responses, live tool activity, structured tool summaries, and the same conversation history as every other Hermes surface.</td></tr>

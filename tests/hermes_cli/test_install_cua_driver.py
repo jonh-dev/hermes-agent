@@ -1509,7 +1509,9 @@ class TestUnattendedRefreshPreflights:
         """The unattended Windows command must invoke install.ps1 with
         -NoAutoStart — Register-CuaDriverAutostart is the only branch that
         self-elevates (UAC). Host-independent: the preflight takes the
-        platform as data."""
+        platform as data. The command from ``_cua_installer_command`` already
+        carries the flag (every Hermes-driven Windows install does, #97389);
+        the preflight must pass it through unchanged."""
         from hermes_cli import tools_config_cua as tools_config
 
         explicit_cmd, _hint, _script = tools_config._cua_installer_command(True)
@@ -1521,4 +1523,128 @@ class TestUnattendedRefreshPreflights:
             )
         joined = " ".join(cmd)
         assert "-NoAutoStart" in joined
-        assert "-NoAutoStart" not in " ".join(explicit_cmd)
+        assert "-NoAutoStart" in " ".join(explicit_cmd)
+
+
+class TestCuaAutostartOptIn:
+    """``computer_use.autostart`` gates every Windows logon-task registration
+    (#97389). On-demand (absent/False, the default) is the documented
+    behaviour; the config read fails closed to the default."""
+
+    def _opt_in(self, config):
+        from hermes_cli import tools_config_cua as tools_config
+
+        with patch("hermes_cli.config.load_config", return_value=config):
+            return tools_config._cua_autostart_opt_in()
+
+    def test_absent_key_is_on_demand(self):
+        assert self._opt_in({"computer_use": {}}) is False
+
+    def test_explicit_true_opts_in(self):
+        assert self._opt_in({"computer_use": {"autostart": True}}) is True
+
+    def test_explicit_false_stays_on_demand(self):
+        assert self._opt_in({"computer_use": {"autostart": False}}) is False
+
+    def test_missing_computer_use_block_is_on_demand(self):
+        assert self._opt_in({}) is False
+
+    def test_unreadable_config_fails_closed_to_on_demand(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        with patch("hermes_cli.config.load_config", side_effect=OSError("unreadable")):
+            assert tools_config._cua_autostart_opt_in() is False
+
+
+class TestWindowsInstallerNoAutoStartEverywhere:
+    """Every Hermes-driven Windows installer invocation — fresh install,
+    toolset enable, repair, and unattended refresh — must pass -NoAutoStart:
+    Register-CuaDriverAutostart is the only install.ps1 branch that
+    self-elevates (UAC), and the per-boot task is opt-in via
+    ``computer_use.autostart`` (#97389). Registration, when opted in, happens
+    explicitly post-install through ``_repair_cua_driver_autostart_windows``.
+
+    Host-independent: ``_cua_installer_command`` takes the platform as data."""
+
+    def test_windows_installer_command_carries_noautostart(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        cmd, _hint, script = tools_config._cua_installer_command(True)
+        joined = " ".join(cmd)
+        assert "-NoAutoStart" in joined
+        # Scriptblock invocation is what carries the parameter.
+        assert "[scriptblock]::Create($sc)" in joined
+        assert script is None
+
+    def test_windows_manual_hint_stays_the_upstream_one_liner(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        _cmd, hint, _script = tools_config._cua_installer_command(True)
+        # A human running the hint interactively sees (and grants) the UAC
+        # prompt, so the plain upstream form is correct there.
+        assert "irm" in hint and "iex" in hint
+
+
+class TestAutostartRegistrationArgs:
+    """The elevated registration command must use Start-Process's structured
+    ``-FilePath`` / ``-ArgumentList``: older install.ps1 builds interpolated
+    the binary path into a command string, which split at the first space."""
+
+    def test_structured_args_survive_paths_with_spaces(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        path = "C:\\Program Files\\cua driver\\cua-driver.exe"
+        ps = tools_config._cua_autostart_registration_ps_command(path)
+        assert "Start-Process -FilePath $exe" in ps
+        assert "@('autostart','enable')" in ps
+        assert "-Verb RunAs -Wait -PassThru" in ps
+        # The path is single-quoted (never interpolated bare into the command
+        # string), so spaces cannot split it.
+        assert f"$exe = '{path}'" in ps
+
+    def test_registration_goes_through_the_explicit_driver_verbs(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        ps = tools_config._cua_autostart_registration_ps_command("/x/cua-driver")
+        assert "autostart" in ps and "enable" in ps
+
+
+# ``windows_only`` (see conftest): the repair/ready gates below read the real
+# ``sys.platform`` — these need native Windows, where the scheduled-task
+# branch actually executes. Live verification on Windows is pending.
+@pytest.mark.windows_only
+class TestWindowsAutostartRepairOptIn:
+    def test_repair_skips_registration_when_not_opted_in(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        with patch.object(tools_config, "_cua_autostart_opt_in", return_value=False), \
+             patch.object(tools_config, "_cua_driver_autostart_registered_windows",
+                          return_value=False), \
+             patch.object(tools_config, "_run_text") as run_text:
+            ok = tools_config._repair_cua_driver_autostart_windows(
+                "cua-driver", verbose=True)
+
+        assert ok is True
+        run_text.assert_not_called()
+
+    def test_install_ready_does_not_require_task_when_not_opted_in(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        with patch.object(tools_config, "_cua_driver_contract_status",
+                          return_value={"ready": True, "version": "0.20.0",
+                                        "binary": "/x/cua-driver", "reason": ""}), \
+             patch.object(tools_config, "_cua_driver_autostart_registered_windows",
+                          return_value=False), \
+             patch.object(tools_config, "_cua_autostart_opt_in", return_value=False):
+            assert tools_config._cua_driver_install_ready() is True
+
+    def test_install_ready_still_requires_task_when_opted_in(self):
+        from hermes_cli import tools_config_cua as tools_config
+
+        with patch.object(tools_config, "_cua_driver_contract_status",
+                          return_value={"ready": True, "version": "0.20.0",
+                                        "binary": "/x/cua-driver", "reason": ""}), \
+             patch.object(tools_config, "_cua_driver_autostart_registered_windows",
+                          return_value=False), \
+             patch.object(tools_config, "_cua_autostart_opt_in", return_value=True):
+            assert tools_config._cua_driver_install_ready() is False

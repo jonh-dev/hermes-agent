@@ -233,6 +233,7 @@ import {
 } from './gateway-file-download'
 import { startGatewaysAfterUpdateAbort, stopGatewayBeforeUpdate } from './gateway-stop-before-update'
 import { probeGatewayWebSocket, spawnedBackendProbeOptions } from './gateway-ws-probe'
+import { armGitTimeout, GIT_OPERATION_TIMEOUT_MS, GIT_TIMEOUT } from './git-child-timeout'
 import { registerGitIpc } from './git-ipc'
 import {
   describeGitHubCredentialSource,
@@ -3281,9 +3282,27 @@ function runGit(args, options: any = {}): Promise<{ code: number; stdout: string
       stderr += text
       options.onLine?.('stderr', text)
     })
+
+    // Wall-clock bound (#95788): a blackholed fetch/ls-remote never closes its
+    // stdio pipes, so a promise settling only on 'close' hangs the update UI on
+    // "Looking for updates…" forever. Reject at the bound; the helper also
+    // SIGTERM→SIGKILLs the wedged child (git-remote-https must not outlive our
+    // interest in it). The rejected error falls through to the same
+    // check-failed/apply-failed surface as any other git failure, so the UI
+    // keeps its retry affordance.
+    const timeout = armGitTimeout(
+      child,
+      () => reject(Object.assign(
+        new Error(`git ${args[0]} timed out after ${GIT_OPERATION_TIMEOUT_MS / 1000}s`),
+        { kind: GIT_TIMEOUT }
+      )),
+      options.timeoutMs ?? GIT_OPERATION_TIMEOUT_MS
+    )
+
     // A spawn-level failure means git itself never ran (missing, not
     // executable, wrong CPU architecture) — a local problem, not a network one.
     child.once('error', error => {
+      timeout.cancel()
       const local = describeGitSpawnFailure(error, gitBinary)
 
       reject(local ? Object.assign(new Error(local), { kind: GIT_UNUSABLE, cause: error }) : error)
@@ -3291,7 +3310,10 @@ function runGit(args, options: any = {}): Promise<{ code: number; stdout: string
     // 'close', not 'exit': exit can fire before the stdio pipes drain, and a
     // resolved-early `remote get-url` came back as "" often enough to route
     // passive checks down the wrong remote path.
-    child.once('close', code => resolve({ code, stdout, stderr }))
+    child.once('close', code => {
+      timeout.cancel()
+      resolve({ code, stdout, stderr })
+    })
   })
 }
 

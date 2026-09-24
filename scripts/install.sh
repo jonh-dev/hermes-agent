@@ -3681,6 +3681,13 @@ install_desktop() {
     fi
     if [ -z "$app" ]; then
         log_error "Desktop build completed but no app was found under $desktop_dir/release/"
+        log_error "On macOS, electron-builder names the unpacked output directory after the"
+        log_error "build host's architecture; this script looks for:"
+        log_error "  release/mac-arm64/Hermes.app  (Apple Silicon builds)"
+        log_error "  release/mac/Hermes.app        (other macOS builds)"
+        log_error "Check the builder output above for a differently named directory. Note"
+        log_error "that the prebuilt macOS installer is Apple Silicon only; building here"
+        log_error "is how Intel Macs get a desktop app that launches."
         return 1
     fi
     log_success "Desktop app built: $app"

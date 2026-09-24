@@ -139,7 +139,11 @@ def _cua_driver_contract_status(binary: Optional[str] = None) -> dict:
 def _cua_driver_install_ready() -> bool:
     """Return whether an existing driver needs no install-time repair."""
     return bool(_cua_driver_contract_status().get("ready")) and (
-        sys.platform != "win32" or _cua_driver_autostart_registered_windows())
+        sys.platform != "win32"
+        # On-demand default (#97389): with computer_use.autostart off, a missing
+        # cua-driver-serve logon task is intentional, not a repair condition —
+        # requiring it here biased every enable flow toward registering it.
+        or _cua_driver_autostart_registered_windows() or not _cua_autostart_opt_in())
 
 
 def _pip_install(args: List[str], *, timeout: int = 300, capture_output: bool = True):
@@ -514,11 +518,40 @@ def _cua_driver_autostart_registered_windows() -> bool:
         return False
 
 
+def _cua_autostart_opt_in() -> bool:
+    """``computer_use.autostart`` — opt IN to the Windows per-boot ``cua-driver-serve`` logon
+    task. The default (absent/False) is on-demand (#97389): Computer Use starts the driver per
+    session exactly as macOS and Linux do, install/enable flows register no scheduled task, and
+    a missing task is not a repair condition. True registers (or repairs) the logon task at
+    install/enable time — needed when driving Windows over SSH (Session 0 has no interactive
+    desktop). Unreadable config fails closed to the on-demand default."""
+    with contextlib.suppress(Exception):
+        from hermes_cli.config import load_config
+        return bool(((load_config() or {}).get("computer_use") or {}).get("autostart", False))
+    return False
+
+
+def _cua_autostart_registration_ps_command(binary: str) -> str:
+    """PowerShell body for the elevated registration: Start-Process with a STRUCTURED
+    ``-FilePath`` / ``-ArgumentList`` (older install.ps1 builds interpolated the binary path
+    into a command string, which split at the first space) and ``-Verb RunAs -Wait -PassThru``
+    so the exit code propagates."""
+    return (f"$exe = {_ps_single_quote(binary)}; "
+            "$proc = Start-Process -FilePath $exe -ArgumentList @('autostart','enable') "
+            "-Verb RunAs -Wait -PassThru -ErrorAction Stop; exit $proc.ExitCode")
+
+
 def _repair_cua_driver_autostart_windows(driver_cmd: str, *, verbose: bool) -> bool:
     """Best-effort repair for Windows installer autostart quoting failures.
     Older install.ps1 builds interpolated the binary path into a PowerShell command string, which
     split at the first space. If the scheduled task is missing, retry via Start-Process's
     structured ``-FilePath`` / ``-ArgumentList`` parameters instead.
+
+    Only runs when the user opted into the per-boot task via
+    ``computer_use.autostart`` (#97389): the on-demand default registers
+    nothing, silently — returning True (nothing to repair) keeps callers from
+    printing "auto-start was not registered" warnings for an intentional
+    absence.
 
     The wrapper itself must stay invisible and unattended (#115017): this runs from the shared
     install/refresh path, which a windowless parent drives (Desktop backend, detached gateway, a
@@ -530,13 +563,16 @@ def _repair_cua_driver_autostart_windows(driver_cmd: str, *, verbose: bool) -> b
     is still reported; the OS-owned UAC consent UI is unaffected."""
     if sys.platform != "win32" or _cua_driver_autostart_registered_windows():
         return True
+    if not _cua_autostart_opt_in():
+        # On-demand default (#97389): the per-boot cua-driver-serve task is opt-in
+        # via computer_use.autostart. Registering here would recreate, on every
+        # enable/install, exactly the silent boot-time task the issue reports.
+        return True
     binary = shutil.which(driver_cmd)
     if not binary:
         return False
     ps = shutil.which("powershell") or shutil.which("powershell.exe") or "powershell"
-    ps_cmd = (f"$exe = {_ps_single_quote(binary)}; "
-              "$proc = Start-Process -FilePath $exe -ArgumentList @('autostart','enable') "
-              "-Verb RunAs -Wait -PassThru -ErrorAction Stop; exit $proc.ExitCode")
+    ps_cmd = _cua_autostart_registration_ps_command(binary)
     _print_info("    Registering cua-driver auto-start..." if verbose
                 else "    Repairing cua-driver auto-start registration...")
     try:
@@ -644,8 +680,17 @@ def _reap_after_timeout(proc, *, is_windows: bool) -> None:
 def _cua_installer_command(is_windows: bool):
     """Return ``(install_cmd, manual_hint, script_path)``; all None if the POSIX download fails."""
     if is_windows:
+        # -NoAutoStart on EVERY Hermes-driven Windows install (fresh install, toolset
+        # enable, repair, unattended refresh): Register-CuaDriverAutostart is the only
+        # install.ps1 branch that self-elevates (UAC), and the per-boot task is opt-in
+        # via computer_use.autostart (#97389) — registration, when the user opted in,
+        # happens explicitly post-install through _repair_cua_driver_autostart_windows.
+        # Scriptblock invocation (not `| iex`) is what lets us pass the parameter. The
+        # manual hint stays upstream's plain one-liner: a human running it interactively
+        # sees (and grants) the UAC prompt, so the unmodified upstream form is right there.
         ps_oneliner = f"irm {_CUA_INSTALL_PS1_URL} | iex"  # mirrors cua_driver_install_hint()
-        return (["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_oneliner],
+        return (["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                 f"$sc = irm {_CUA_INSTALL_PS1_URL}; & ([scriptblock]::Create($sc)) -NoAutoStart"],
                 f'powershell -NoProfile -ExecutionPolicy Bypass -Command "{ps_oneliner}"', None)
 
     # Download-then-exec instead of `bash -c "$(curl …)"`: no shell=True, no command substitution,
@@ -668,12 +713,12 @@ def _cua_installer_command(is_windows: bool):
     return ["/bin/bash", script_path], manual_hint, script_path
 
 
-def _unattended_installer_preflight(install_cmd: list, is_windows: bool):
+def _unattended_installer_preflight(install_cmd: list, is_windows: bool):  # noqa: ARG001 — platform context kept for call-site symmetry
     """Fail FAST on the two conditions that otherwise consume the whole unattended ceiling:
     (1) install lock held by a live process — upstream would poll it for up to
     LOCK_STALE_AFTER_SECONDS=600 before probing the holder (the 11-minute silent hang class);
     (2) release host unreachable — the installer dies slowly inside its own retries; a 5s HEAD
-    answers. Returns the (possibly rewritten) install command, or None to skip this refresh.
+    answers. Returns the install command to run, or None to skip this refresh.
     Explicit `install --upgrade` runs never come here and keep upstream's full lock-recovery."""
     if _cua_install_lock_held():
         _fail("    Another cua-driver install is in progress (upstream install lock is held) — "
@@ -684,14 +729,9 @@ def _unattended_installer_preflight(install_cmd: list, is_windows: bool):
         _print_info("    github.com is unreachable — skipping cua-driver refresh "
                     "(will retry on the next update).")
         return None
-    if is_windows:
-        # -NoAutoStart skips Register-CuaDriverAutostart — the ONLY branch of install.ps1 that
-        # self-elevates (UAC). Cost: an existing cua-driver-serve task keeps pointing at the
-        # previous binary until the next interactive upgrade. Scriptblock invocation (not `| iex`)
-        # is what lets us pass the parameter.
-        install_cmd = [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-            f"$sc = irm {_CUA_INSTALL_PS1_URL}; & ([scriptblock]::Create($sc)) -NoAutoStart"]
+    # No Windows rewrite here: _cua_installer_command already emits the
+    # scriptblock -NoAutoStart form for every Hermes-driven install, so the
+    # only self-elevating (UAC) branch of install.ps1 never runs unattended.
     return install_cmd
 
 

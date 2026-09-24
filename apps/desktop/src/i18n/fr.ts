@@ -5073,7 +5073,8 @@ export const frOverrides = {
         title: 'Utilisation du contexte',
         tokenSummary: (used, max) => `${used} / ${max} jetons`
       },
-      session: 'Session',
+      focusedSince: 'Focalisé depuis',
+      focusedSinceTitle: 'Temps depuis que cette conversation est au premier plan — pas la durée d’un tour',
       yoloOn: 'YOLO activé — approbation automatique des commandes dangereuses. Shift+clic pour basculer globalement.',
       yoloOff: 'YOLO désactivé. Shift+clic pour basculer globalement.',
       modelNone: 'aucun',

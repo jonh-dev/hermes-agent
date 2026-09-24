@@ -5053,7 +5053,8 @@ export const esOverrides = {
         title: 'Uso del contexto',
         tokenSummary: (used, max) => `${used} / ${max} tokens`
       },
-      session: 'Sesión',
+      focusedSince: 'Enfocado desde',
+      focusedSinceTitle: 'Tiempo desde que este chat está enfocado — no cuánto lleva un turno',
       yoloOn: 'YOLO activado — autoaprobando comandos peligrosos. Shift+clic lo alterna globalmente.',
       yoloOff: 'YOLO desactivado. Shift+clic lo alterna globalmente.',
       modelNone: 'ninguno',

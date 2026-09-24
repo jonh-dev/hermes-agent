@@ -11,6 +11,7 @@ import {
   connectionScopeSuffix,
   rescopeConnectionScopedStores
 } from '@/lib/connection-scoped'
+import type { TileSessionFocusStamp } from '@/lib/session-timer-since'
 import { persistBoolean, persistString, readJson, storedBoolean, storedString, writeJson } from '@/lib/storage'
 import type { SessionInfo, UsageStats } from '@/types/hermes'
 
@@ -1249,6 +1250,9 @@ export const $currentUsage = atom<UsageStats>({
   total: 0
 })
 export const $sessionStartedAt = atom<number | null>(null)
+// $sessionStartedAt is primary-only; tiles get their own "focused since" stamp
+// for the statusbar timer (#103123), set when a tile becomes the focused surface.
+export const $tileSessionFocusStartedAt = atom<null | TileSessionFocusStamp>(null)
 export const $turnStartedAt = atom<number | null>(null)
 export const $introPersonality = atom('')
 export const $currentPersonality = atom('')
@@ -1628,6 +1632,8 @@ export const workspaceCwdForNewSession = (): string => {
 export const setCurrentBranch = (next: Updater<string>) => updateAtom($currentBranch, next)
 export const setCurrentUsage = (next: Updater<UsageStats>) => updateAtom($currentUsage, next)
 export const setSessionStartedAt = (next: Updater<number | null>) => updateAtom($sessionStartedAt, next)
+export const setTileSessionFocusStartedAt = (next: Updater<null | TileSessionFocusStamp>) =>
+  updateAtom($tileSessionFocusStartedAt, next)
 export const setTurnStartedAt = (next: Updater<number | null>) => updateAtom($turnStartedAt, next)
 export const setIntroPersonality = (next: Updater<string>) => updateAtom($introPersonality, next)
 export const setCurrentPersonality = (next: Updater<string>) => updateAtom($currentPersonality, next)

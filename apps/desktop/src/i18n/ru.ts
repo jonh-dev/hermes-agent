@@ -3586,7 +3586,8 @@ export const ru = defineLocale({
         title: 'Использование контекста',
         tokenSummary: (used, max) => `${used} / ${max} токенов`
       },
-      session: 'Сеанс',
+      focusedSince: 'В фокусе с',
+      focusedSinceTitle: 'Время с момента фокуса этого чата — не длительность хода',
       yoloOn: 'YOLO включён — автоматическое подтверждение опасных команд. Shift-клик переключает глобально.',
       yoloOff: 'YOLO выключен. Shift-клик переключает глобально.',
       modelNone: 'нет',

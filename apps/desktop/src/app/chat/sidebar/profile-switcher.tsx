@@ -99,6 +99,7 @@ import { PROFILES_ROUTE, SETTINGS_ROUTE } from '../../routes'
 
 import { ConnectionGlyph } from './connection-glyph'
 import { buildRestGroups, countRestAgents, type FleetAgent, type FleetGroup, fleetRouteKey } from './fleet-rail'
+import { useLocalDeviceSwitch } from './local-device-switch'
 import { ProfileLaunchContextMenu, ProfileLaunchMenuSection } from './profile-launch-menu'
 import { ProfileRemoteOverrideDialog } from './profile-remote-override-dialog'
 import { useFleetRoster } from './use-fleet-roster'
@@ -175,6 +176,7 @@ export function ProfileRail() {
   // square, not in the statusbar — the previous source stays painted).
   const [pendingRoute, setPendingRoute] = useState<null | string>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { dialog: localDeviceDialog, request: requestLocalDevice } = useLocalDeviceSwitch()
 
   useFleetRoster(multipleConnections)
 
@@ -232,7 +234,7 @@ export function ProfileRail() {
   // squares wherever they live.
   const condensed = profiles.length + countRestAgents(restGroups) > PROFILE_DROPDOWN_THRESHOLD
 
-  const switchToRest = (agent: FleetAgent) => {
+  const commitRestSwitch = (agent: FleetAgent) => {
     const key = fleetRouteKey(agent.connectionId, agent.profile)
     triggerHaptic('selection')
     setPendingRoute(key)
@@ -240,6 +242,32 @@ export function ProfileRail() {
     void selectConnection(agent.connectionId, { profile: agent.profile })
       .catch((error: unknown) => notifyError(error, p.switchConnectionFailed(agent.connectionLabel)))
       .finally(() => setPendingRoute(current => (current === key ? null : current)))
+  }
+
+  const switchToRest = (agent: FleetAgent) => {
+    if (agent.connectionKind !== 'local') {
+      commitRestSwitch(agent)
+
+      return
+    }
+
+    // Probe spinner only. The dialog — install confirm or fresh-session cue —
+    // must be on screen before selectConnection replaces the center.
+    const key = fleetRouteKey(agent.connectionId, agent.profile)
+    setPendingRoute(key)
+
+    void requestLocalDevice({
+      connectionId: agent.connectionId,
+      label: agent.connectionLabel,
+      profile: agent.profile,
+      replaceCenter: agent.profile === 'default'
+    }).then(accepted => {
+      setPendingRoute(current => (current === key ? null : current))
+
+      if (accepted) {
+        commitRestSwitch(agent)
+      }
+    })
   }
 
   const restScope = (agent: FleetAgent): ProfileScope => ({ connectionId: agent.connectionId, profile: agent.profile })
@@ -540,6 +568,8 @@ export function ProfileRail() {
           without first creating a throwaway second profile. */}
       <ProfilePill active={false} glyph="ellipsis" label={p.manageProfiles} onSelect={() => navigate(PROFILES_ROUTE)} />
 
+      {localDeviceDialog}
+
       {/* Multi-gateway discoverability: before a second source exists, a plug
           pinned beside Manage deep-links to the unified Gateways page. Once
           there are several sources, the same action lives in their selector. */}
@@ -824,30 +854,35 @@ function ProfileDropdown({
               <span className="truncate">{group.label}</span>
               {!group.reachable && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
             </DropdownMenuLabel>
-            {[group.defaultAgent, ...group.named].map(agent => (
-              <ProfileLaunchContextMenu
-                connectionId={agent.connectionId}
-                key={agent.profile}
-                label={p.fleet.onGateway(agent.profile, group.label)}
-                profile={agent.profile}
-              >
-                <DropdownMenuItem
-                  aria-label={p.fleet.onGateway(agent.profile, group.label)}
-                  className="min-w-0"
-                  onSelect={() => onSelectRest(agent)}
+            {[group.defaultAgent, ...group.named].map(agent => {
+              const localDefault = agent.connectionKind === 'local' && agent.isDefault
+              const label = localDefault ? p.fleet.localDevice : p.fleet.onGateway(agent.profile, group.label)
+
+              return (
+                <ProfileLaunchContextMenu
+                  connectionId={agent.connectionId}
+                  key={agent.profile}
+                  label={label}
+                  profile={agent.profile}
                 >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <ProfileGlyph
-                      aria-hidden="true"
-                      color={resolveProfileColor(agent.profile, colors)}
-                      isDefault={agent.isDefault}
-                      name={agent.profile}
-                    />
-                    <span className="truncate">{agent.profile}</span>
-                  </span>
-                </DropdownMenuItem>
-              </ProfileLaunchContextMenu>
-            ))}
+                  <DropdownMenuItem aria-label={label} className="min-w-0" onSelect={() => onSelectRest(agent)}>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {localDefault ? (
+                        <Codicon aria-hidden="true" name="device-desktop" size="0.875rem" />
+                      ) : (
+                        <ProfileGlyph
+                          aria-hidden="true"
+                          color={resolveProfileColor(agent.profile, colors)}
+                          isDefault={agent.isDefault}
+                          name={agent.profile}
+                        />
+                      )}
+                      <span className="truncate">{agent.profile}</span>
+                    </span>
+                  </DropdownMenuItem>
+                </ProfileLaunchContextMenu>
+              )
+            })}
           </div>
         ))}
       </DropdownMenuContent>
@@ -1016,6 +1051,9 @@ function FleetRestGroup({
   const p = t.profiles
   const dividerLabel = group.reachable ? p.fleet.gateway(group.label) : p.fleet.gatewayUnreachable(group.label)
   const defaultKey = fleetRouteKey(group.connectionId, group.defaultAgent.profile)
+  // At rest, This device is a backend switch, not Home. The house glyph stays
+  // on the active gateway's default profile.
+  const localDefault = group.kind === 'local'
 
   return (
     <>
@@ -1032,13 +1070,13 @@ function FleetRestGroup({
         <ProfilePill
           active={false}
           connectionId={group.connectionId}
-          glyph="home"
-          label={p.fleet.onGateway(group.defaultAgent.profile, group.label)}
+          glyph={localDefault ? 'device-desktop' : 'home'}
+          label={localDefault ? p.fleet.localDevice : p.fleet.onGateway(group.defaultAgent.profile, group.label)}
           muted
           onSelect={() => onSelect(group.defaultAgent)}
           pending={pendingRoute === defaultKey}
           profile={group.defaultAgent.profile}
-          slot="profile-rail-rest-home"
+          slot={localDefault ? 'profile-rail-local-device' : 'profile-rail-rest-home'}
         />
         {group.named.map(agent => (
           <RestSquare

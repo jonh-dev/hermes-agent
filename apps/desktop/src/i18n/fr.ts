@@ -3534,7 +3534,17 @@ export const frOverrides = {
       gatewayUnreachable: gateway => `${gateway} · inaccessible`,
       onGateway: (name, gateway) => `${name} · ${gateway}`,
       switchTo: (name, gateway) => `Basculer vers ${name} sur ${gateway}`,
-      deleteOn: gateway => ` sur ${gateway}`
+      deleteOn: gateway => ` sur ${gateway}`,
+      localDevice: 'Cet appareil (backend local — installe Hermes s’il manque, sinon ouvre une nouvelle session)',
+      switchDeviceTitle: 'Basculer vers cet appareil ?',
+      switchDeviceDesc:
+        'Cela ouvre une nouvelle session sur cet ordinateur. La conversation en cours reste sur l’autre gateway.',
+      switchDeviceConfirm: 'Basculer',
+      installDeviceTitle: 'Basculer vers cet appareil ?',
+      installDeviceDesc:
+        'Hermes sera installé localement, puis une nouvelle session s’ouvrira sur cet ordinateur. Rien n’est installé tant que vous ne confirmez pas.',
+      installDeviceConfirm: 'Installer localement',
+      connectExistingInstead: 'Connecter un existant à la place'
     },
     remoteOverride: {
       menuItem: 'Se connecter à un hôte distant…',

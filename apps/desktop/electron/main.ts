@@ -14980,6 +14980,13 @@ ipcMain.handle('hermes:bootstrap:cancel', async () => {
 })
 ipcMain.handle('hermes:boot-progress:get', async () => bootProgressState)
 ipcMain.handle('hermes:bootstrap:get', async () => getBootstrapState())
+ipcMain.handle('hermes:local-backend:probe', async () => {
+  // Resolution only. ensureRuntime/runBootstrap must not start from a hover
+  // or a click that has not confirmed the install.
+  const backend = await resolveHermesBackend([])
+
+  return { bootstrapNeeded: backend?.kind === 'bootstrap-needed' }
+})
 ipcMain.handle('hermes:connection-config:get', async (_event, profile) =>
   sanitizeDesktopConnectionConfig(readDesktopConnectionConfig(), profile)
 )

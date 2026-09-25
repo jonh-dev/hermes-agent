@@ -3085,7 +3085,17 @@ export const en: Translations = {
       gatewayUnreachable: gateway => `${gateway} · unreachable`,
       onGateway: (name, gateway) => `${name} · ${gateway}`,
       switchTo: (name, gateway) => `Switch to ${name} on ${gateway}`,
-      deleteOn: gateway => ` on ${gateway}`
+      deleteOn: gateway => ` on ${gateway}`,
+      localDevice: 'This device (local backend — installs Hermes if missing, otherwise opens a fresh session)',
+      switchDeviceTitle: 'Switch to This device?',
+      switchDeviceDesc:
+        'This opens a fresh session on this computer. The conversation you are in stays on the other gateway.',
+      switchDeviceConfirm: 'Switch',
+      installDeviceTitle: 'Switch to This device?',
+      installDeviceDesc:
+        'This will install Hermes locally, then open a fresh session on this computer. Nothing is installed until you confirm.',
+      installDeviceConfirm: 'Install locally',
+      connectExistingInstead: 'Connect to existing instead'
     },
     remoteOverride: {
       menuItem: 'Connect to a remote host…',

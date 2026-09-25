@@ -2037,6 +2037,18 @@ export const ja = defineLocale({
     switchToConnection: name => `${name} に切り替え`,
     switchConnectionFailed: name => `${name} に接続できませんでした`,
     manageProfiles: 'プロファイルを管理…',
+    fleet: {
+      localDevice:
+        'このデバイス（ローカルバックエンド — Hermes が無ければインストールし、あれば新しいセッションを開きます）',
+      switchDeviceTitle: 'このデバイスに切り替えますか？',
+      switchDeviceDesc: 'このコンピュータで新しいセッションを開きます。今の会話は別のゲートウェイに残ります。',
+      switchDeviceConfirm: '切り替える',
+      installDeviceTitle: 'このデバイスに切り替えますか？',
+      installDeviceDesc:
+        'Hermes をローカルにインストールしてから、このコンピュータで新しいセッションを開きます。確認するまでインストールは始まりません。',
+      installDeviceConfirm: 'ローカルにインストール',
+      connectExistingInstead: '代わりに既存環境へ接続'
+    },
     remoteOverride: {
       menuItem: 'リモートホストに接続…',
       badge: (host: string) => `${host} で実行中`,

@@ -3517,7 +3517,17 @@ export const esOverrides = {
       gatewayUnreachable: (gateway: string) => `${gateway} · inaccesible`,
       onGateway: (name: string, gateway: string) => `${name} · ${gateway}`,
       switchTo: (name: string, gateway: string) => `Cambiar a ${name} en ${gateway}`,
-      deleteOn: (gateway: string) => ` en ${gateway}`
+      deleteOn: (gateway: string) => ` en ${gateway}`,
+      localDevice: 'Este dispositivo (backend local: instala Hermes si falta; si no, abre una sesión nueva)',
+      switchDeviceTitle: '¿Cambiar a este dispositivo?',
+      switchDeviceDesc:
+        'Esto abre una sesión nueva en este equipo. La conversación actual permanece en el otro gateway.',
+      switchDeviceConfirm: 'Cambiar',
+      installDeviceTitle: '¿Cambiar a este dispositivo?',
+      installDeviceDesc:
+        'Esto instalará Hermes localmente y luego abrirá una sesión nueva en este equipo. No se instala nada hasta que confirmes.',
+      installDeviceConfirm: 'Instalar localmente',
+      connectExistingInstead: 'Conectar uno existente en su lugar'
     },
     remoteOverride: {
       menuItem: 'Conectar a un host remoto…',
